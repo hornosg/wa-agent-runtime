@@ -24,10 +24,27 @@ func (c *captureOutbound) Send(_ context.Context, to string, r Reply) error {
 	return nil
 }
 
-func run(t *testing.T, mode TenantMode, text string) (Reply, string) {
+// fakeRetriever / fakeAnswerer — dobles inline (no se importa knowledge: evita ciclo).
+type fakeRetriever struct{ chunks []FAQChunk }
+
+func (f fakeRetriever) Retrieve(_ context.Context, _, _ string) ([]FAQChunk, error) {
+	return f.chunks, nil
+}
+
+type fakeAnswerer struct{}
+
+func (fakeAnswerer) Answer(_ context.Context, _ string, chunks []FAQChunk) (Reply, error) {
+	if len(chunks) == 0 {
+		return Reply{Handoff: true}, nil
+	}
+	return Reply{Text: chunks[0].Content}, nil
+}
+
+func run(t *testing.T, mode TenantMode, text string, chunks []FAQChunk) (Reply, string) {
 	t.Helper()
 	out := &captureOutbound{}
-	rt := New(fakeTenants{mode: mode}, NewStubClassifier(), NewHardcodedReplier(), out, logging.New("test"))
+	replier := NewGuadaReplier(fakeRetriever{chunks: chunks}, fakeAnswerer{})
+	rt := New(fakeTenants{mode: mode}, NewStubClassifier(), replier, out, logging.New("test"))
 	if err := rt.Process(context.Background(), InboundMessage{TenantSlug: "demo", From: "549110", Text: text}); err != nil {
 		t.Fatalf("Process error: %v", err)
 	}
@@ -35,28 +52,36 @@ func run(t *testing.T, mode TenantMode, text string) (Reply, string) {
 }
 
 func TestProcess_BookingAgenda(t *testing.T) {
-	r, to := run(t, ModeAgenda, "Hola! Quiero sacar un turno para mañana")
-	if r.Handoff {
-		t.Fatalf("agenda+booking no debería derivar a handoff: %+v", r)
-	}
-	if !strings.Contains(strings.ToLower(r.Text), "agend") {
-		t.Fatalf("se esperaba respuesta de agenda, got: %q", r.Text)
+	r, to := run(t, ModeAgenda, "Hola! Quiero sacar un turno para mañana", nil)
+	if r.Handoff || !strings.Contains(strings.ToLower(r.Text), "agend") {
+		t.Fatalf("se esperaba respuesta de agenda sin handoff, got: %+v", r)
 	}
 	if to != "549110" {
-		t.Fatalf("outbound a destinatario incorrecto: %q", to)
+		t.Fatalf("destinatario incorrecto: %q", to)
 	}
 }
 
 func TestProcess_BookingRagChatHandsOff(t *testing.T) {
-	r, _ := run(t, ModeRagChat, "Quiero un turno para mañana")
+	r, _ := run(t, ModeRagChat, "Quiero un turno para mañana", nil)
 	if !r.Handoff {
 		t.Fatalf("rag_chat+booking debería derivar a handoff (P-13/G-10): %+v", r)
 	}
 }
 
-func TestProcess_FAQ(t *testing.T) {
-	r, _ := run(t, ModeRagChat, "Que precio tiene el corte?")
+func TestProcess_FAQ_WithEvidence(t *testing.T) {
+	chunks := []FAQChunk{{Content: "El corte de pelo cuesta $5000.", Distance: 0.2}}
+	r, _ := run(t, ModeRagChat, "Que precio tiene el corte?", chunks)
 	if r.Handoff {
-		t.Fatalf("una FAQ no debería derivar a handoff: %+v", r)
+		t.Fatalf("con evidencia no debería derivar: %+v", r)
+	}
+	if !strings.Contains(r.Text, "5000") {
+		t.Fatalf("se esperaba respuesta grounded en el chunk, got: %q", r.Text)
+	}
+}
+
+func TestProcess_FAQ_NoEvidenceHandsOff(t *testing.T) {
+	r, _ := run(t, ModeRagChat, "Tienen estacionamiento?", nil) // retriever sin chunks
+	if !r.Handoff {
+		t.Fatalf("sin evidencia en la KB debería derivar a handoff (P-05): %+v", r)
 	}
 }

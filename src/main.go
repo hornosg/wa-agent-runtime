@@ -12,6 +12,7 @@ import (
 
 	"github.com/hornosg/wa-agent-runtime/src/agent"
 	"github.com/hornosg/wa-agent-runtime/src/config"
+	"github.com/hornosg/wa-agent-runtime/src/knowledge"
 	"github.com/hornosg/wa-agent-runtime/src/logging"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
@@ -53,10 +54,28 @@ func main() {
 		log.Info("startup.llm_driver", map[string]any{"driver": "anthropic", "model": "claude-haiku-4-5"})
 	}
 
+	// RAG (E05): embeddings (Voyage/stub) → retriever pgvector → answerer (Sonnet/stub).
+	var emb knowledge.Embeddings
+	if cfg.EmbeddingsDriver == "stub" || cfg.VoyageKey == "" {
+		emb = knowledge.NewStubEmbeddings()
+		log.Warn("startup.embeddings_driver", map[string]any{"driver": "stub", "reason": "EMBEDDINGS_DRIVER=stub o VOYAGE_API_KEY vacío"})
+	} else {
+		emb = knowledge.NewVoyageEmbeddings(cfg.VoyageKey)
+		log.Info("startup.embeddings_driver", map[string]any{"driver": "voyage", "model": "voyage-3.5"})
+	}
+	retriever := knowledge.NewPgKnowledge(pool, emb, cfg.KnowledgeMaxDist)
+
+	var answerer agent.FAQAnswerer
+	if cfg.LLMDriver == "stub" || cfg.AnthropicKey == "" {
+		answerer = knowledge.NewStubAnswerer()
+	} else {
+		answerer = knowledge.NewAnthropicAnswerer(cfg.AnthropicKey)
+	}
+
 	rt := agent.New(
 		agent.NewPgTenants(pool, log),
 		classifier,
-		agent.NewHardcodedReplier(),
+		agent.NewGuadaReplier(retriever, answerer),
 		agent.NewLogOutbound(log),
 		log,
 	)

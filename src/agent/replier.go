@@ -2,21 +2,33 @@ package agent
 
 import "context"
 
-// HardcodedReplier — respuestas por rama (H1: "respuesta hardcodeada por rama").
-// Respeta el modo del tenant (G-10): en rag_chat el booking deriva a handoff.
-// El grounding real (RAG/FAQ E05, scheduling E06) reemplaza esto luego.
-type HardcodedReplier struct{}
+// GuadaReplier — respuestas de Guada por rama. La rama FAQ usa RAG (retrieval +
+// answer grounded; P-05: sin evidencia → handoff). El resto es hardcodeado por
+// ahora (H1), respetando el modo del tenant (G-10). Booking real = E06.
+type GuadaReplier struct {
+	retriever FAQRetriever
+	answerer  FAQAnswerer
+}
 
-func NewHardcodedReplier() *HardcodedReplier { return &HardcodedReplier{} }
+func NewGuadaReplier(retriever FAQRetriever, answerer FAQAnswerer) *GuadaReplier {
+	return &GuadaReplier{retriever: retriever, answerer: answerer}
+}
 
-func (HardcodedReplier) Reply(_ context.Context, _ InboundMessage, intent Intent, tc TenantConfig) (Reply, error) {
+func (r *GuadaReplier) Reply(ctx context.Context, m InboundMessage, intent Intent, tc TenantConfig) (Reply, error) {
 	switch intent {
 	case IntentFAQ:
-		return Reply{Text: "¡Hola! Soy Guada. Dame un segundo que reviso eso y te confirmo. 🙂"}, nil
+		chunks, err := r.retriever.Retrieve(ctx, m.TenantSlug, m.Text)
+		if err != nil {
+			return Reply{}, err
+		}
+		if len(chunks) == 0 {
+			// Sin evidencia en la KnowledgeBase → handoff, no inventar (P-05/G-09).
+			return Reply{Text: "Mmm, eso no lo tengo a mano. Te paso con una persona del equipo para que te ayude. 🙌", Handoff: true}, nil
+		}
+		return r.answerer.Answer(ctx, m.Text, chunks)
 
 	case IntentBooking, IntentReschedule:
 		if tc.Mode != ModeAgenda {
-			// Tenant FAQ-only: no maneja turnos -> handoff.
 			return Reply{Text: "Por ahora no gestiono turnos por acá; te derivo con una persona del equipo.", Handoff: true}, nil
 		}
 		return Reply{Text: "¡Genial! Te ayudo a agendar. ¿Qué día y horario te queda cómodo?"}, nil
