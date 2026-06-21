@@ -14,10 +14,10 @@ type LogOutbound struct {
 
 func NewLogOutbound(log *logging.Logger) *LogOutbound { return &LogOutbound{log: log} }
 
-func (o *LogOutbound) Send(_ context.Context, to string, r Reply) error {
+func (o *LogOutbound) Send(_ context.Context, tenantSlug, to string, r Reply) error {
 	o.log.Info("outbound.reply", map[string]any{
-		"to": to, "handoff": r.Handoff, "text": r.Text,
-		"note": "log-driver (outbound real = outbox del gateway, E03)",
+		"tenant_slug": tenantSlug, "to": to, "handoff": r.Handoff, "text": r.Text,
+		"note": "log-driver (real = cola outbound → gateway → Kapso)",
 	})
 	return nil
 }

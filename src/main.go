@@ -12,6 +12,7 @@ import (
 
 	"github.com/hornosg/wa-agent-runtime/src/agent"
 	"github.com/hornosg/wa-agent-runtime/src/config"
+	"github.com/hornosg/wa-agent-runtime/src/contract"
 	"github.com/hornosg/wa-agent-runtime/src/knowledge"
 	"github.com/hornosg/wa-agent-runtime/src/logging"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -72,19 +73,38 @@ func main() {
 		answerer = knowledge.NewAnthropicAnswerer(cfg.AnthropicKey)
 	}
 
+	// Cliente insert-only para encolar outbound (rompe el ciclo worker→rt→outbound).
+	// Registra el kind "outbound_message" (no-op) sólo para validar Insert; sin Queues no trabaja.
+	insertWorkers := river.NewWorkers()
+	river.AddWorker(insertWorkers, agent.NewNoopOutboundWorker())
+	insertClient, err := river.NewClient(driver, &river.Config{Workers: insertWorkers})
+	if err != nil {
+		log.Error("startup.river_insert_client_failed", map[string]any{"error": err.Error()})
+		os.Exit(1)
+	}
+
+	// Outbound: encola en la cola "outbound" (gateway → Kapso) o loguea (dev).
+	var outbound agent.Outbound
+	if cfg.OutboundDriver == "log" {
+		outbound = agent.NewLogOutbound(log)
+		log.Warn("startup.outbound_driver", map[string]any{"driver": "log"})
+	} else {
+		outbound = agent.NewRiverOutbound(insertClient)
+	}
+
 	rt := agent.New(
 		agent.NewPgTenants(pool, log),
 		classifier,
 		agent.NewGuadaReplier(retriever, answerer),
-		agent.NewLogOutbound(log),
+		outbound,
 		log,
 	)
 
+	// Cliente consumidor de la cola "inbound".
 	workers := river.NewWorkers()
 	river.AddWorker(workers, agent.NewInboundWorker(rt))
-
 	client, err := river.NewClient(driver, &river.Config{
-		Queues:  map[string]river.QueueConfig{river.QueueDefault: {MaxWorkers: cfg.MaxWorkers}},
+		Queues:  map[string]river.QueueConfig{contract.QueueInbound: {MaxWorkers: cfg.MaxWorkers}},
 		Workers: workers,
 	})
 	if err != nil {
@@ -96,7 +116,7 @@ func main() {
 		log.Error("startup.river_start_failed", map[string]any{"error": err.Error()})
 		os.Exit(1)
 	}
-	log.Info("startup.consuming", map[string]any{"queue": river.QueueDefault, "max_workers": cfg.MaxWorkers})
+	log.Info("startup.consuming", map[string]any{"queue": contract.QueueInbound, "max_workers": cfg.MaxWorkers})
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

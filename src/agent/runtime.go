@@ -38,7 +38,7 @@ func (a *AgentRuntime) Process(ctx context.Context, m InboundMessage) error {
 		return err
 	}
 
-	if err := a.outbound.Send(ctx, m.From, reply); err != nil {
+	if err := a.outbound.Send(ctx, m.TenantSlug, m.From, reply); err != nil {
 		a.log.Error("runtime.outbound_failed", map[string]any{"tenant_slug": m.TenantSlug, "error": err.Error()})
 		return err
 	}

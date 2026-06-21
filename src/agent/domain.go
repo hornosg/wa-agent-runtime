@@ -63,5 +63,5 @@ type Replier interface {
 }
 
 type Outbound interface {
-	Send(ctx context.Context, to string, r Reply) error
+	Send(ctx context.Context, tenantSlug, to string, r Reply) error
 }

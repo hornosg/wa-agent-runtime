@@ -8,15 +8,16 @@ import (
 
 // Config del agent-runtime (SVC-02). 12-factor (RULE-02).
 type Config struct {
-	DBHost       string
-	DBPort       string
-	DBName       string
-	DBUser       string
-	DBPassword   string
-	DBSSLMode    string
-	LLMDriver    string // "anthropic" (real) | "stub" (sin API key, dev/CI)
-	AnthropicKey string
-	MaxWorkers   int
+	DBHost         string
+	DBPort         string
+	DBName         string
+	DBUser         string
+	DBPassword     string
+	DBSSLMode      string
+	LLMDriver      string // "anthropic" (real) | "stub" (sin API key, dev/CI)
+	AnthropicKey   string
+	OutboundDriver string // "river" (encola → gateway → Kapso) | "log" (dev)
+	MaxWorkers     int
 	// RAG (E05)
 	EmbeddingsDriver string // "voyage" | "stub"
 	VoyageKey        string
@@ -25,15 +26,16 @@ type Config struct {
 
 func Load() Config {
 	return Config{
-		DBHost:       env("DB_HOST", "lab-postgres"),
-		DBPort:       env("DB_PORT", "5432"),
-		DBName:       env("DB_NAME", "whatsapp_agent"),
-		DBUser:       env("DB_USER", "whatsapp_agent"),
-		DBPassword:   env("DB_PASSWORD", "whatsapp_agent"),
-		DBSSLMode:    env("DB_SSLMODE", "disable"),
-		LLMDriver:    env("LLM_DRIVER", "anthropic"),
-		AnthropicKey: os.Getenv("ANTHROPIC_API_KEY"),
-		MaxWorkers:   5,
+		DBHost:         env("DB_HOST", "lab-postgres"),
+		DBPort:         env("DB_PORT", "5432"),
+		DBName:         env("DB_NAME", "whatsapp_agent"),
+		DBUser:         env("DB_USER", "whatsapp_agent"),
+		DBPassword:     env("DB_PASSWORD", "whatsapp_agent"),
+		DBSSLMode:      env("DB_SSLMODE", "disable"),
+		LLMDriver:      env("LLM_DRIVER", "anthropic"),
+		AnthropicKey:   os.Getenv("ANTHROPIC_API_KEY"),
+		OutboundDriver: env("OUTBOUND_DRIVER", "river"),
+		MaxWorkers:     5,
 
 		EmbeddingsDriver: env("EMBEDDINGS_DRIVER", "voyage"),
 		VoyageKey:        os.Getenv("VOYAGE_API_KEY"),

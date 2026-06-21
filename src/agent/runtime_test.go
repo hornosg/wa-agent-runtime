@@ -19,7 +19,7 @@ type captureOutbound struct {
 	reply Reply
 }
 
-func (c *captureOutbound) Send(_ context.Context, to string, r Reply) error {
+func (c *captureOutbound) Send(_ context.Context, _, to string, r Reply) error {
 	c.to, c.reply = to, r
 	return nil
 }
