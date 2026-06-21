@@ -40,10 +40,17 @@ func (fakeAnswerer) Answer(_ context.Context, _ string, chunks []FAQChunk) (Repl
 	return Reply{Text: chunks[0].Content}, nil
 }
 
+// fakeScheduler — sin disponibilidad (ok=false) para los tests del replier.
+type fakeScheduler struct{}
+
+func (fakeScheduler) NextAvailable(context.Context, string) (SlotInfo, bool, error) {
+	return SlotInfo{}, false, nil
+}
+
 func run(t *testing.T, mode TenantMode, text string, chunks []FAQChunk) (Reply, string) {
 	t.Helper()
 	out := &captureOutbound{}
-	replier := NewGuadaReplier(fakeRetriever{chunks: chunks}, fakeAnswerer{})
+	replier := NewGuadaReplier(fakeRetriever{chunks: chunks}, fakeAnswerer{}, fakeScheduler{})
 	rt := New(fakeTenants{mode: mode}, NewStubClassifier(), replier, out, logging.New("test"))
 	if err := rt.Process(context.Background(), InboundMessage{TenantSlug: "demo", From: "549110", Text: text}); err != nil {
 		t.Fatalf("Process error: %v", err)

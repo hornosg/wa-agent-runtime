@@ -15,6 +15,7 @@ import (
 	"github.com/hornosg/wa-agent-runtime/src/contract"
 	"github.com/hornosg/wa-agent-runtime/src/knowledge"
 	"github.com/hornosg/wa-agent-runtime/src/logging"
+	"github.com/hornosg/wa-agent-runtime/src/scheduling"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
@@ -95,7 +96,7 @@ func main() {
 	rt := agent.New(
 		agent.NewPgTenants(pool, log),
 		classifier,
-		agent.NewGuadaReplier(retriever, answerer),
+		agent.NewGuadaReplier(retriever, answerer, scheduling.NewPgScheduler(pool)),
 		outbound,
 		log,
 	)

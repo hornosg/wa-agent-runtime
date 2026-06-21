@@ -1,17 +1,21 @@
 package agent
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
-// GuadaReplier — respuestas de Guada por rama. La rama FAQ usa RAG (retrieval +
-// answer grounded; P-05: sin evidencia → handoff). El resto es hardcodeado por
-// ahora (H1), respetando el modo del tenant (G-10). Booking real = E06.
+// GuadaReplier — respuestas de Guada por rama. FAQ usa RAG (P-05). Booking propone
+// el próximo turno real desde scheduling (E06) con CTA al cierre (P-15). Respeta el
+// modo del tenant (G-10).
 type GuadaReplier struct {
 	retriever FAQRetriever
 	answerer  FAQAnswerer
+	scheduler BookingScheduler // puede ser nil (sin agenda configurada)
 }
 
-func NewGuadaReplier(retriever FAQRetriever, answerer FAQAnswerer) *GuadaReplier {
-	return &GuadaReplier{retriever: retriever, answerer: answerer}
+func NewGuadaReplier(retriever FAQRetriever, answerer FAQAnswerer, scheduler BookingScheduler) *GuadaReplier {
+	return &GuadaReplier{retriever: retriever, answerer: answerer, scheduler: scheduler}
 }
 
 func (r *GuadaReplier) Reply(ctx context.Context, m InboundMessage, intent Intent, tc TenantConfig) (Reply, error) {
@@ -31,7 +35,16 @@ func (r *GuadaReplier) Reply(ctx context.Context, m InboundMessage, intent Inten
 		if tc.Mode != ModeAgenda {
 			return Reply{Text: "Por ahora no gestiono turnos por acá; te derivo con una persona del equipo.", Handoff: true}, nil
 		}
-		return Reply{Text: "¡Genial! Te ayudo a agendar. ¿Qué día y horario te queda cómodo?"}, nil
+		// Proponer el próximo turno real (disponibilidad desde Postgres) con CTA al cierre (P-15).
+		if r.scheduler != nil {
+			if slot, ok, err := r.scheduler.NextAvailable(ctx, m.TenantSlug); err == nil && ok {
+				return Reply{Text: fmt.Sprintf(
+					"Tengo un turno el %s a las %s. ¿Te lo reservo? 🙂",
+					slot.Start.Format("02/01"), slot.Start.Format("15:04"),
+				)}, nil
+			}
+		}
+		return Reply{Text: "¡Dale! Te ayudo a agendar. ¿Qué día y horario te queda cómodo?"}, nil
 
 	case IntentCancel:
 		if tc.Mode != ModeAgenda {
