@@ -1,21 +1,17 @@
 package agent
 
-import (
-	"context"
-	"fmt"
-)
+import "context"
 
-// GuadaReplier — respuestas de Guada por rama. FAQ usa RAG (P-05). Booking propone
-// el próximo turno real desde scheduling (E06) con CTA al cierre (P-15). Respeta el
-// modo del tenant (G-10).
+// GuadaReplier — respuestas de Guada para las ramas SIN estado (FAQ con RAG, cancel,
+// handoff, y booking en tenant rag_chat → handoff). El flujo de booking con agenda
+// (propone → confirma → reserva) lo maneja AgentRuntime (E07), no el replier.
 type GuadaReplier struct {
 	retriever FAQRetriever
 	answerer  FAQAnswerer
-	scheduler BookingScheduler // puede ser nil (sin agenda configurada)
 }
 
-func NewGuadaReplier(retriever FAQRetriever, answerer FAQAnswerer, scheduler BookingScheduler) *GuadaReplier {
-	return &GuadaReplier{retriever: retriever, answerer: answerer, scheduler: scheduler}
+func NewGuadaReplier(retriever FAQRetriever, answerer FAQAnswerer) *GuadaReplier {
+	return &GuadaReplier{retriever: retriever, answerer: answerer}
 }
 
 func (r *GuadaReplier) Reply(ctx context.Context, m InboundMessage, intent Intent, tc TenantConfig) (Reply, error) {
@@ -32,19 +28,9 @@ func (r *GuadaReplier) Reply(ctx context.Context, m InboundMessage, intent Inten
 		return r.answerer.Answer(ctx, m.Text, chunks)
 
 	case IntentBooking, IntentReschedule:
-		if tc.Mode != ModeAgenda {
-			return Reply{Text: "Por ahora no gestiono turnos por acá; te derivo con una persona del equipo.", Handoff: true}, nil
-		}
-		// Proponer el próximo turno real (disponibilidad desde Postgres) con CTA al cierre (P-15).
-		if r.scheduler != nil {
-			if slot, ok, err := r.scheduler.NextAvailable(ctx, m.TenantSlug); err == nil && ok {
-				return Reply{Text: fmt.Sprintf(
-					"Tengo un turno el %s a las %s. ¿Te lo reservo? 🙂",
-					slot.Start.Format("02/01"), slot.Start.Format("15:04"),
-				)}, nil
-			}
-		}
-		return Reply{Text: "¡Dale! Te ayudo a agendar. ¿Qué día y horario te queda cómodo?"}, nil
+		// Sólo llega acá en tenants sin agenda (rag_chat) → handoff. El flujo con
+		// agenda lo intercepta AgentRuntime antes del replier (E07).
+		return Reply{Text: "Por ahora no gestiono turnos por acá; te derivo con una persona del equipo.", Handoff: true}, nil
 
 	case IntentCancel:
 		if tc.Mode != ModeAgenda {

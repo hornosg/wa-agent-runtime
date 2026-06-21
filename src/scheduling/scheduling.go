@@ -13,9 +13,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// ErrSlotTaken — el turno se solapa con uno confirmado (lo rechaza la constraint).
-var ErrSlotTaken = errors.New("slot ya reservado")
-
 type resourceRow struct {
 	id          string
 	nombre      string
@@ -64,15 +61,18 @@ func (s *PgScheduler) NextAvailable(ctx context.Context, tenantSlug string) (age
 			if overlapsAny(start, end, busy) {
 				continue
 			}
-			return agent.SlotInfo{Start: start, End: end, ResourceName: res.nombre}, true, nil
+			return agent.SlotInfo{
+				ResourceID: res.id, ResourceName: res.nombre,
+				Start: start, End: end, Minutes: res.slotMinutes,
+			}, true, nil
 		}
 	}
 	return agent.SlotInfo{}, false, nil
 }
 
-// CreateBooking inserta un turno. Si se solapa con uno confirmado, la EXCLUDE
-// constraint lo rechaza → ErrSlotTaken. Concurrencia-safe por Postgres.
-func (s *PgScheduler) CreateBooking(ctx context.Context, tenantSlug, resourceID, contact string, start time.Time, slotMinutes int) (string, error) {
+// Book inserta un turno (implementa agent.BookingScheduler). Si se solapa con uno
+// confirmado, la EXCLUDE constraint lo rechaza → agent.ErrSlotTaken. Safe por Postgres.
+func (s *PgScheduler) Book(ctx context.Context, tenantSlug, resourceID, contact string, start time.Time, slotMinutes int) (string, error) {
 	end := start.Add(time.Duration(slotMinutes) * time.Minute)
 	var id string
 	err := s.pool.QueryRow(ctx, `
@@ -83,7 +83,7 @@ func (s *PgScheduler) CreateBooking(ctx context.Context, tenantSlug, resourceID,
 	).Scan(&id)
 	if err != nil {
 		if isExclusionViolation(err) {
-			return "", ErrSlotTaken
+			return "", agent.ErrSlotTaken
 		}
 		return "", err
 	}

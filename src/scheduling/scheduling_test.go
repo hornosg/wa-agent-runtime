@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/hornosg/wa-agent-runtime/src/agent"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -45,13 +46,13 @@ func TestAntiDoubleBooking(t *testing.T) {
 	}
 
 	// 1) Reservar el slot.
-	id1, err := s.CreateBooking(ctx, tenant, rid, "5491100000001", slot.Start, 30)
+	id1, err := s.Book(ctx, tenant, rid, "5491100000001", slot.Start, 30)
 	if err != nil {
 		t.Fatalf("CreateBooking 1: %v", err)
 	}
 
 	// 2) ANTI DOBLE-RESERVA: el mismo slot otra vez → ErrSlotTaken.
-	if _, err := s.CreateBooking(ctx, tenant, rid, "5491100000002", slot.Start, 30); !errors.Is(err, ErrSlotTaken) {
+	if _, err := s.Book(ctx, tenant, rid, "5491100000002", slot.Start, 30); !errors.Is(err, agent.ErrSlotTaken) {
 		t.Fatalf("doble reserva debería fallar con ErrSlotTaken, got: %v", err)
 	}
 
@@ -65,7 +66,7 @@ func TestAntiDoubleBooking(t *testing.T) {
 	if err := s.CancelBooking(ctx, id1); err != nil {
 		t.Fatalf("CancelBooking: %v", err)
 	}
-	if _, err := s.CreateBooking(ctx, tenant, rid, "5491100000003", slot.Start, 30); err != nil {
+	if _, err := s.Book(ctx, tenant, rid, "5491100000003", slot.Start, 30); err != nil {
 		t.Fatalf("CreateBooking tras cancelar (slot libre): %v", err)
 	}
 }

@@ -95,8 +95,10 @@ func main() {
 
 	rt := agent.New(
 		agent.NewPgTenants(pool, log),
+		agent.NewPgConversations(pool),
 		classifier,
-		agent.NewGuadaReplier(retriever, answerer, scheduling.NewPgScheduler(pool)),
+		agent.NewGuadaReplier(retriever, answerer),
+		scheduling.NewPgScheduler(pool),
 		outbound,
 		log,
 	)
